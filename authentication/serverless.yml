@@ -1,0 +1,222 @@
+service: serverless-authenticatio # change this
+
+provider:
+  name: aws
+  environment: ${file(./env.yml):${opt:stage, self:provider.stage}}
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+      - dynamodb:*
+      Resource: "*"
+    - Effect: Allow
+      Action:
+      - cognito-sync:*
+      - cognito-identity:*
+      Resource: arn:aws:cognito-identity:*:*:*
+    - Effect: Allow
+      Action:
+      - cognito-idp:*
+      Resource: arn:aws:cognito-idp:*:*:*
+  runtime: nodejs12.x
+
+package:
+  exclude:
+    - .git/**
+
+# Functions
+
+functions:
+  mock:
+    handler: handler.mock
+    events:
+      - http:
+          path: mock
+          method: POST
+          integration: mock
+          request:
+            template:
+              application/json: '{"statusCode": 200}'
+          response:
+            template:
+              application/json: '{"data": {}}'
+            statusCodes:
+              200:
+                pattern: ''
+
+  login:
+    handler: handler.login
+    events:
+      - http:
+          path: login
+          method: POST
+          cors: true
+  signin:
+    handler: handler.signin
+    memorySize: 256
+    # timeout: 15
+    events:
+      - http:
+          path: authentication/signin/{provider}
+          method: GET
+          integration: lambda-proxy
+  callback:
+    handler: handler.callback
+    memorySize: 256
+    # timeout: 15
+    events:
+      - http:
+          path: authentication/callback/{provider}
+          method: GET
+          integration: lambda-proxy
+  refresh:
+    handler: handler.refresh
+    memorySize: 256
+    # timeout: 15
+    events:
+      - http:
+          path: authentication/refresh/{refresh_token}
+          method: GET
+          cors: true
+          integration: lambda
+          request:
+            template:
+              application/json: |
+                {
+                  "refresh_token":"$input.params('refresh_token')",
+                  "id":"$input.params('id')",
+                  "state":"$input.params('state')",
+                  "host":"$input.params().header.get('host')",
+                  "stage":"$context.stage"
+                }
+  authorize:
+    handler: handler.authorize
+
+  authorizedPath:
+    handler: handler.helloWorld
+    events:
+      - http:
+          path: policy-authorized
+          method: GET
+          cors:
+            origins:
+              - '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: true
+          authorizer:
+            name: authorize
+            resultTtlInSeconds: 0
+
+  unauthorizedPath:
+    handler: handler.helloWorld
+    events:
+      - http:
+          path: policy-unauthorized
+          method: GET
+          cors:
+            origins:
+              - '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: true
+          authorizer:
+            name: authorize
+            resultTtlInSeconds: 0
+
+
+plugins:
+  - deployment-info
+  - serverless-offline
+
+resources:
+  Description: ${self:provider.environment.SERVICE} [${self:provider.environment.STAGE}] template
+  # Condition is used to switch API Gateway custom domain creation
+  Conditions:
+    CreateCustomDomain:
+      Fn::Not:
+        - Fn::Equals:
+          - ${self:provider.environment.REDIRECT_DOMAIN_NAME, ""}
+          - ""
+  Resources:
+    AuthorizationFunctionArnParameter:
+      Type: AWS::SSM::Parameter
+      Properties:
+        Name: "/authentication/${self:provider.environment.STAGE}/authorization-function-arn"
+        Type: "String"
+        Value:
+          Fn::GetAtt:
+            - AuthorizeLambdaFunction
+            - Arn
+        Description: "SSM Parameter for Authorization function arn"
+    CacheTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        AttributeDefinitions:
+        - AttributeName: token
+          AttributeType: S
+        - AttributeName: type
+          AttributeType: S
+        KeySchema:
+        - AttributeName: token
+          KeyType: HASH
+        - AttributeName: type
+          KeyType: RANGE
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.CACHE_DB_NAME}
+
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        SSESpecification:
+          SSEEnabled: true
+        AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.USERS_DB_NAME}
+
+# API Gateway Custom domain is created if "REDIRECT_DOMAIN_NAME" is defined in the env.yml
+    RedirectDomainName:
+      Type: AWS::ApiGateway::DomainName
+      Condition: CreateCustomDomain
+      Properties:
+        DomainName: ${self:provider.environment.REDIRECT_DOMAIN_NAME}
+        CertificateArn: ${self:provider.environment.REDIRECT_CERTIFICATE_ARN}
+    RedirectBasePathMapping:
+      Type: AWS::ApiGateway::BasePathMapping
+      Condition: CreateCustomDomain
+      DependsOn: RedirectDomainName
+      Properties:
+        Stage: ${self:provider.environment.STAGE}
+        DomainName: ${self:provider.environment.REDIRECT_DOMAIN_NAME}
+        RestApiId:
+          Ref: ApiGatewayRestApi
+    RedirectRecordSetGroup:
+      Type: AWS::Route53::RecordSetGroup
+      Condition: CreateCustomDomain
+      Properties:
+        HostedZoneId: ${self:provider.environment.REDIRECT_HOSTED_ZONE_ID}
+        RecordSets:
+        - Name: ${self:provider.environment.REDIRECT_DOMAIN_NAME}
+          Type: A
+          AliasTarget:
+            HostedZoneId: Z2FDTNDATAQYW2 # don't change -> https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-route53-aliastarget.html#cfn-route53-aliastarget-hostedzoneid
+            DNSName:
+              Fn::GetAtt:
+                - RedirectDomainName
+                - DistributionDomainName

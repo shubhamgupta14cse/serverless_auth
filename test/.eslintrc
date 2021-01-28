@@ -1,0 +1,19 @@
+{
+  "settings": {
+    "import/core-modules": [
+      "chai",
+      "serverless-authentication",
+      "nock",
+      "js-yaml",
+      "aws-sdk",
+      "async"
+    ]
+  },
+  "rules": {
+    "no-unused-expressions": "off"
+  },
+  "env": {
+    "node": true,
+    "mocha": true
+  }
+}

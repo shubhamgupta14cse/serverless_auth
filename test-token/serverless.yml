@@ -1,0 +1,30 @@
+service: serverless-authentication-test-token # NOTE: update this with your service name
+
+provider:
+  name: aws
+  stage: dev
+  region: us-east-1
+  runtime: nodejs8.10
+
+functions:
+  testToken:
+    handler: handler.test
+    events:
+      - http:
+          path: test-token
+          method: get
+          cors:
+            origins:
+              - '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: true
+          authorizer:
+            arn: ${ssm:/authentication/${opt:stage, self:provider.stage}/authorization-function-arn}
+            resultTtlInSeconds: 0
+            identitySource: method.request.header.Authorization
+            identityValidationExpression: .*

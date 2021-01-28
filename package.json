@@ -1,0 +1,46 @@
+{
+  "name": "serverless-authentication-boilerplate",
+  "version": "2.0.0",
+  "description": "Boilerplate for Serverless Authentication",
+  "author": "Eetu Tuomala (https://laardee.com)",
+  "license": "MIT",
+  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/laardee/serverless-authentication-boilerplate.git"
+  },
+  "keywords": [
+    "serverless",
+    "aws",
+    "oauth",
+    "lambda"
+  ],
+  "devDependencies": {
+    "aws-sdk": "^2.302.0",
+    "dotenv": "^6.0.0",
+    "eslint": "^5.4.0",
+    "eslint-config-airbnb": "^17.1.0",
+    "eslint-plugin-import": "^2.14.0",
+    "eslint-plugin-jsx-a11y": "^6.1.1",
+    "eslint-plugin-react": "^7.11.1",
+    "jest": "^23.5.0",
+    "log4js": "^3.0.5",
+    "nock": "^9.6.1",
+    "serverless-authentication": "^0.6.3"
+  },
+  "scripts": {
+    "lint": "eslint . --fix",
+    "test": "jest .",
+    "install-dependencies": "npm run install-authentication && npm run install-test-token",
+    "install-authentication": "cd authentication && npm install",
+    "install-test-token": "cd test-token && npm install",
+    "deploy-authentication": "cd authentication && serverless deploy",
+    "deploy-test-token": "cd test-token && serverless deploy",
+    "deploy": "npm run deploy-authentication && npm run deploy-test-token",
+    "setup:fauna": "node authentication/lib/storage/fauna/faunaSetupSchema.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^8.5.1"
+  }
+}
